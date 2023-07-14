@@ -11,7 +11,7 @@ const {  bulkCreateOrUpdateTransactions,
          bulkCreateOrUpdateTransactionRequests,
          createOrUpdateIntraTransaction,
          createOrUpdateTransactionRequest,
-         createTestUser, generateNumberOfObjects, bulkCreateOrUpdateUsers,addCurrencies,createOrUpdateUser} = require("./collections");
+         createTestUser, generateNumberOfObjects, bulkCreateOrUpdateUsers,addCurrencies,createOrUpdateUser,updateUserFCM,extractTokenFromBearer} = require("./collections");
 const {createNewTransfer} = require("./transfers");
 const {fetchAndUpdateExchangeRates,getExchangeRate,getRates} = require("./rates");
 const {trackEvent} = require("./analytics");
@@ -27,111 +27,184 @@ fetchAndUpdateExchangeRates(admin);
 
 exports.helloWorld = functions.https.onRequest((request, response) => {
   // Verify if the user is authenticated
-
-   //trackEvent("test_data");
-   functions.logger.info("Hello logs!", {structuredData: true});
-   response.send("Hello from Firebase!");
+  const tokenId = extractTokenFromBearer(data.headers.authorization);
+  admin.auth().verifyIdToken(tokenId)
+  .then((decodedToken)=>{
+      let uid = decodedToken.uid;
+      try{
+        functions.logger.info("Hello logs!", {structuredData: true});
+        response.send("Hello from Firebase!");
+  }catch (error) {
+      console.error(error);
+      context.status(500).send({ message: 'Hello world failure' });
+  }        
+  })
+  .catch((error)=>{
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+  });
  });
 
  exports.getrates = functions.https.onRequest((request, response) => {
     // Verify if the user is authenticated
-  
+   // Verify if the user is authenticated
+   const tokenId = extractTokenFromBearer(request.headers.authorization);
+   admin.auth().verifyIdToken(tokenId)
+   .then((decodedToken)=>{
+       let uid = decodedToken.uid;
+       try{
+        response.send(getRates());
+   }catch (error) {
+       console.error(error);
+       context.status(500).send({ message: 'Error getting rates in GetRates', error });
+   }        
+   })
+   .catch((error)=>{
+       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+   });
      //trackEvent("test_data");
      //functions.logger.info("Hello logs!", {structuredData: true});
-     response.send(getRates());
+     
    });
 
- exports.addTransferRequest = functions.https.onRequest(async (data, context) => {
-    try {
-    // Verify if the user is authenticated
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-    }
 
+ exports.addTransferRequest = functions.https.onRequest(async (data, context) => {
+    
+     // Verify if the user is authenticated
+  const tokenId = extractTokenFromBearer(data.headers.authorization);
+  admin.auth().verifyIdToken(tokenId)
+  .then((decodedToken)=>{
+        let uid = decodedToken.uid;
         firestore
         .collection("users")
-        .where("userId", "==", data.userId)
+        .where("userId", "==", uid)
         .limit(1)
         .get()
         .then((querySnapshot) => {
-          if (!querySnapshot.empty) {
+            if (!querySnapshot.empty) {
             // Document with the unique field value exists
             const user = querySnapshot.docs[0];
             createNewTransfer(data.body,admin,user);
-          } else {
+            } else {
             // Document with the unique field value does not exist
             console.log("User does not exist");
-          }
+            }
         })
         .catch((error) => {
-          console.error("Error querying Firestore:", error);
-        });
-    
-    context.status(201).send({ message: 'createNewTransfer Success' });
-    
-    }catch (error) {
-    console.error(error);
-    context.status(500).send({ message: 'createNewTransfer Error' });
-    }
-  });
- 
-  exports.matchTransfersRequestOnCall = functions.https.onRequest(async (data, context) => {
-    // Verify if the user is authenticated
-    if (!context.auth) {
+            console.error("Error querying Firestore:", error);
+        });      
+  }).catch((error)=>{
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-    }
-    try {
-      matchTransferUtil();
-      context.status(201).send({ message: 'matchTransfersRequestOnCall Success' });
-    }catch (error) {
-      console.error(error);
-      context.status(500).send({ message: 'matchTransfersRequestOnCall Error' });
-    }});
+  });
+});
+ 
+
+  exports.matchTransfersRequestOnCall = functions.https.onRequest(async (data, context) => {
+ // Verify if the user is authenticated
+    const tokenId = extractTokenFromBearer(data.headers.authorization);
+    admin.auth().verifyIdToken(tokenId)
+    .then((decodedToken)=>{
+        let uid = decodedToken.uid;
+        try {
+            matchTransferUtil();
+            context.status(201).send({ message: 'matchTransfersRequestOnCall Success' });
+        }catch (error) {
+            console.error(error);
+            context.status(500).send({ message: 'matchTransfersRequestOnCall Error' });
+        }})
+        .catch((error)=>{
+          throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+      });
+    })
+    
+  
+
 
     
   exports.createTestUsersOnCall = functions.https.onRequest(async (data, context) => {
     // Verify if the user is authenticated
     try {
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-    }
+        const tokenId = extractTokenFromBearer(data.headers.authorization);
+        admin.auth().verifyIdToken(tokenId)
+        .then((decodedToken)=>{
+            let uid = decodedToken.uid;
+            try{
+                if(data.body.users>30)
+                {
+                    throw error("Number of test users is limited to 30 a batch");
+                }  
+                users = generateNumberOfObjects(data.body.users,createTestUser);
+                bulkCreateOrUpdateUsers(firestore,users);
+                trackEvent("14124124112",       
+                    {
+                        "name": "createTestUsersOnCall",
+                        "params": {
+                            users,
+                        }
+                    }
+                );
+                context.status(201).send({ message: 'bulkCreateOrUpdateUsers Success' });
+                context.status(201).send({ message: 'CreateNewUser Success' });
+        }catch (error) {
+            console.error(error);
+            context.status(500).send({ message: 'createNewUser Error' });
+        }        
+        })
+        .catch((error)=>{
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+        });
 
-    if(data.body.users>30)
-    {
-      throw error("Number of test users is limited to 30 a batch");
-    }  
-    users = generateNumberOfObjects(data.body.users,createTestUser);
+   
 
-    bulkCreateOrUpdateUsers(firestore,users);
-    trackEvent("14124124112",       
-        {
-            "name": "createTestUsersOnCall",
-            "params": {
-                users,
-            }
-        }
-    );
-    context.status(201).send({ message: 'bulkCreateOrUpdateUsers Success' });
+   
   }catch (error) {
     console.error("An error occurred: ", error.message);
     context.status(500).send({ message: 'bulkCreateOrUpdateUsers Error' });
     }});
 
-    exports.createOrUpdateUser = functions.https.onRequest(async (data, context) => {
-        try{
-        // Verify if the user is authenticated
-        if (!context.auth) {
-            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-        }
+   
 
-            createOrUpdateUser(context.auth.uid,data,firestore);
+    exports.createOrUpdateUser = functions.https.onRequest(async (data, context) => {
+        const tokenId = extractTokenFromBearer(data.headers.authorization);
+        admin.auth().verifyIdToken(tokenId)
+        .then((decodedToken)=>{
+            let uid = decodedToken.uid;
+
+            try{
+            createOrUpdateUser(uid,data,firestore);
             console.info("CreateNewUser accepted");
             context.status(201).send({ message: 'CreateNewUser Success' });
         }catch (error) {
             console.error(error);
             context.status(500).send({ message: 'createNewUser Error' });
         }        
+        })
+        .catch((error)=>{
+
+            throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+        });    
     });
+
+
+    exports.updateUserFCM = functions.https.onRequest(async (data, context) => {
+    // Verify if the user is authenticated
+    const tokenId = extractTokenFromBearer(data.headers.authorization);
+    admin.auth().verifyIdToken(tokenId)
+    .then((decodedToken)=>{
+        let uid = decodedToken.uid;
+        try{
+                console.log("fcmToken:"+data.body.fcmToken);
+                updateUserFCM(uid,data.body.fcmToken,firestore);
+                console.info("FCM updated");
+                context.status(201).send({ message: 'updateUserFCM Success' });
+            }catch (error) {
+                console.error(error);
+                context.status(500).send({ message: 'updateUserFCM Error' });
+            }             
+    })
+    .catch((error)=>{
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    });    
+});
 
 
     exports.transferRequestsUpdates = functions.firestore.document('transferRequests/{docId}').onWrite((change, context) => {
@@ -221,90 +294,86 @@ function getRandomCurrency(currencies,sendingCurrency) {
     }});
 
     exports.createTransactionDemoRequests = functions.https.onRequest(async (data, context) => {
-    try{
-        // Verify if the user is authenticated
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-    }
-
-        const numberOfRequests = data.body.numberOfRequests;
-        const usersRef = firestore.collection("users");
-        const usersSnapshot = await usersRef.get();
     
-        const transfers = [];
+    // Verify if the user is authenticated
+    const tokenId = extractTokenFromBearer(data.headers.authorization);
+    admin.auth().verifyIdToken(tokenId)
+    .then((decodedToken)=>{
+        let uid = decodedToken.uid;
+    })
+    .catch((error)=>{
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+    })
+    .then(()=>{
+        try{
+            const numberOfRequests = data.body.numberOfRequests;
+            const usersRef = firestore.collection("users");
+            const usersSnapshot = usersRef.get();
+        
+            const transfers = [];
+        
+            // Loop through all the users to get their wallet balances
+            usersSnapshot.forEach((doc) => {
+              const user = doc.data();
+              const wallets = user.Wallets; 
     
-        // Loop through all the users to get their wallet balances
-        usersSnapshot.forEach((doc) => {
-          const user = doc.data();
-          const wallets = user.Wallets; 
-
-          if (wallets) {
-            Object.keys(wallets).forEach((walletId) => {
-              const wallet = wallets[walletId];
-              transfers.push({
-                userId: doc.id,
-                walletId: walletId,
-                balance: wallet.amount,
-                sendingBank: 'test'+Math.floor(Math.random() * wallet.amount)+1,
-                amountToTransfer: Math.floor(Math.random() * wallet.amount)+1, 
-                currency: wallet.currency,
-                currencyTo: getRandomCurrency(['USD', 'EUR', 'ILS'],wallet.currency)
-              });
+              if (wallets) {
+                Object.keys(wallets).forEach((walletId) => {
+                  const wallet = wallets[walletId];
+                  transfers.push({
+                    userId: doc.id,
+                    walletId: walletId,
+                    balance: wallet.amount,
+                    sendingBank: 'test'+Math.floor(Math.random() * wallet.amount)+1,
+                    amountToTransfer: Math.floor(Math.random() * wallet.amount)+1, 
+                    currency: wallet.currency,
+                    currencyTo: getRandomCurrency(['USD', 'EUR', 'ILS'],wallet.currency)
+                  });
+                });
+              }
             });
-          }
-        });
-    
-        // Shuffle the transfers to select a random subset
-        const shuffledtransfers = shuffle(transfers);
-        const selectedtransfers = shuffledtransfers.slice(0, numberOfRequests);
-        // Create Transfers
-        selectedtransfers.forEach((selectedtransfer) => {
-        const dataToAdd = { 
-          userId: selectedtransfer.userId, 
-          sendingWalletRefrence: null, //Will be set later 
-          receivingWalletRefrence: null,//Will be set later 
-          currencyTo: selectedtransfer.currencyTo, 
-          currencyFrom: selectedtransfer.currency, 
-          amountToSend: selectedtransfer.amountToTransfer, 
-          amountLeftToSend: selectedtransfer.amountToTransfer, 
-          amountConverted: 0, 
-          amountReceived: 0, 
-          action: 'Exchange', 
-          transactionStatus: 'New', 
-          errorCode: 0,
-          createdAt: Timestamp.now(), 
-          exchangeFinished: false, 
-          timeToFinishExchange:  new Date(Date.now() + 24 * 60 * 60 * 1000), 
-          askedExchangeType: "Community", 
-          finalizedTransactionDate: null,
-        };
-        console.log("");
-        console.log("");
-        console.log("");
-        console.log("");
-        console.log("");
-        console.log("Transfer Demo Request");
-        console.log(dataToAdd);
-        console.log("");
-        console.log("");
-        console.log("");
-        console.log("");
-        console.log("");
-        createNewTransfer(dataToAdd,admin,selectedtransfer.userId);
-        trackEvent(selectedtransfer.userId,       
-            {
-                "name": "createTransactionDemoRequests",
-                "params": {
-                    dataToAdd,
+        
+            // Shuffle the transfers to select a random subset
+            const shuffledtransfers = shuffle(transfers);
+            const selectedtransfers = shuffledtransfers.slice(0, numberOfRequests);
+            // Create Transfers
+            selectedtransfers.forEach((selectedtransfer) => {
+            const dataToAdd = { 
+              userId: selectedtransfer.userId, 
+              sendingWalletRefrence: null, //Will be set later 
+              receivingWalletRefrence: null,//Will be set later 
+              currencyTo: selectedtransfer.currencyTo, 
+              currencyFrom: selectedtransfer.currency, 
+              amountToSend: selectedtransfer.amountToTransfer, 
+              amountLeftToSend: selectedtransfer.amountToTransfer, 
+              amountConverted: 0, 
+              amountReceived: 0, 
+              action: 'Exchange', 
+              transactionStatus: 'New', 
+              errorCode: 0,
+              createdAt: Timestamp.now(), 
+              exchangeFinished: false, 
+              timeToFinishExchange:  new Date(Date.now() + 24 * 60 * 60 * 1000), 
+              askedExchangeType: "Community", 
+              finalizedTransactionDate: null,
+            };
+            createNewTransfer(dataToAdd,admin,selectedtransfer.userId);
+            trackEvent(selectedtransfer.userId,       
+                {
+                    "name": "createTransactionDemoRequests",
+                    "params": {
+                        dataToAdd,
+                    }
                 }
-            }
-        );
-      });
-      context.status(201).send({ message: 'createTransactionDemoRequests Success' });
-    }catch(error){
-      console.error(error);
-      context.status(500).send({ message: 'createTransactionDemoRequests Error' });
-    }
+            );
+          });
+          context.status(201).send({ message: 'createTransactionDemoRequests Success' });
+        }catch(error){
+          console.error(error);
+          context.status(500).send({ message: 'createTransactionDemoRequests Error' });
+        }    
+    });
+    
     });    
 //Shuffel Array
 function shuffle(array) {
@@ -440,7 +509,9 @@ function matchTransferUtil()
               microRequestsStack2db.push({userId1:request1.userId,userId2:request2.userId,currencyFrom1:request1.currencyFrom,currencyFrom2:request2.currencyFrom,amountLeftToSend1:request1.amountLeftToSend,amountLeftToSend2:request2.amountLeftToSend});
               requestsStack2db.push(request1);
               requestsStack2db.push(request2);
-              console.log();
+              //createNewActivity(request1.userId,change.bankaccount,change.sentamount,change.currency,changeStatus);
+              //createNewActivity(request2.userId,change.bankaccount,change.sentamount,change.currency,changeStatus);
+
             }
             else if(amount1 > amount2*currentCurrency){
               // perform partial transfers and update request1
@@ -495,18 +566,27 @@ function matchTransferUtil()
 }
 
 exports.createCurrencies = functions.https.onRequest(async (data, context) => {
-try {
-    // Verify if the user is authenticated
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-  }
-
-  addCurrencies(firestore);
-  context.status(201).send({ message: 'createCurrencies Success' });
-}catch (error) {
-  console.error("An error occurred: ", error.message);
-  context.status(500).send({ message: 'createCurrencies Error' });
-  }});
+ // Verify if the user is authenticated
+ const tokenId = extractTokenFromBearer(data.headers.authorization);
+ admin.auth().verifyIdToken(tokenId)
+ .then((decodedToken)=>{
+     let uid = decodedToken.uid;
+     try {
+        // Verify if the user is authenticated
+      if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+      } 
+      addCurrencies(firestore);
+      context.status(201).send({ message: 'createCurrencies Success' });
+    }catch (error) {
+      console.error("An error occurred: ", error.message);
+      context.status(500).send({ message: 'createCurrencies Error' });
+      }    
+ })
+ .catch((error)=>{
+     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+ });
+});
 
 async function updateWallet(data)
 {
@@ -529,18 +609,23 @@ async function updateWallet(data)
 
 
 exports.createTestUsers = functions.https.onRequest((request, response) => {
-try {
-    // Verify if the user is authenticated
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
-  }
-  functions.logger.info("Hello logs!", {structuredData: true});
-  response.send("Hello from Firebase!");
-}catch (error)
-{
-    console.error("An error occurred: ", error.message);
-    context.status(500).send({ message: 'createTestUsers Error' });
-}
+
+ // Verify if the user is authenticated
+ const tokenId = extractTokenFromBearer(data.headers.authorization);
+ admin.auth().verifyIdToken(tokenId)
+ .then((decodedToken)=>{
+     let uid = decodedToken.uid;
+     try {
+      functions.logger.info("Hello logs!", {structuredData: true});
+      response.send("Hello from Firebase!");
+    }catch (error) {
+      console.error("An error occurred: ", error.message);
+      context.status(500).send({ message: 'createTestUsers Error' });
+      }    
+ })
+ .catch((error)=>{
+     throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated.');
+ });
 });
 
 exports.updateRates = functions.pubsub.schedule("every 24 hours").onRun((context) => {
@@ -554,18 +639,3 @@ exports.updateRates = functions.pubsub.schedule("every 24 hours").onRun((context
   }}
 );
 
-
-/*
-function matchTransfers()
-{
-    let transferRequests = new Map();
-    let currencies = ['USD', 'EUR', 'ILS'];
-    for(let i = 0; i < currencies.length; i++){
-        for(let j = i+1; j < currencies.length; j++){
-            let pair = `${currencies[i]}-${currencies[j]}`;
-            transferRequests.set(pair, []);
-        }
-    }
-    balanceTransfers();
-}
-*/

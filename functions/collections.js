@@ -241,7 +241,7 @@ async function bulkCreateOrUpdateTransactionRequests(firestore,transactionReques
   }
   function validateUser(user){
     //Must fields
-    if(typeof user.id != 'string' || typeof user.username != 'string' || typeof user.email != 'string' || !isValidEmail(user.email) ||
+    if(typeof user.username != 'string' || typeof user.email != 'string' || !isValidEmail(user.email) ||
     !['fb', 'google', 'apple'].includes(user.authParty) || typeof user.rfreshToken != 'string')
     {
       return false;
@@ -253,12 +253,35 @@ async function addUserToFirebase(id,user,firestore)
 {
   try {
     user.id= id;
-    var userDocRef = firestore.collection('users').doc();
+    var userDocRef = firestore.collection('users').doc(user.id);
     await userDocRef.set(user).then(()=>{
       console.log("Added new user");
     });
   } catch (error) {
     console.error('Error adding user to Firebase:', error);
+  }
+}
+
+async function updateFCMInFirebase(userId,fcm,firestore)
+{
+  const userRef = firestore.collection('users').doc(userId);
+
+  try {
+    const userDoc = await userRef.get();
+
+    if (userDoc.exists) {
+      await userRef.set({ ['fcmToken']: fcm }, { merge: true });
+      return { success: true };
+      }
+      else
+      {
+        console.log("FCM token update failed, couldn't find document ID:"+userId);
+        throw new error
+      }
+    }
+    catch (error) {
+    console.error('Error updating FCM token:', error);
+    throw new error('internal', 'Failed to update FCM token');
   }
 }
 // Function to update user document with subcollections to Firebase
@@ -273,46 +296,28 @@ async function updateUserInFirebase(id,docId,user,firestore) {
     var userDocRef = firestore.collection('users').doc(docId);
     await userDocRef.update(user);
   
- /*    
-    // Add BankAccounts subcollection
-    if(typeof user.bankAccounts!='undefined')
-    {
-      for (let i = 0; i < user.bankAccounts.length; i++) {
-        await userRef.collection('BankAccounts').set(user.bankAccounts[i]);
-      }
-    }
-    
 
-    // Add Wallets subcollection
-    if(typeof user.wallets!='undefined')
-    {
-      for (let i = 0; i < user.wallets.length; i++) {
-        await userRef.collection('Wallets').update(user.wallets[i]);
-      }
-    }
-
-    // Add UserSettings subcollection
-    if(typeof user.userSettings!='undefined')
-    {
-      for (let i = 0; i < user.userSettings.length; i++) {
-        await userRef.collection('UserSettings').update(user.userSettings[i]);
-      }
-    }
-    // Add Businesses subcollection
-    if(typeof user.businesses!='undefined')
-    {
-      for (let i = 0; i < user.businesses.length; i++) {
-        await userRef.collection('Businesses').update(user.businesses[i]);
-      }
-    }
-*/
     console.log(`User updated to Firebase with ID: ${id}`);
   } catch (error) {
     console.error('Error adding user to Firebase:', error);
   }
 }
 
-
+  async function updateUserFCM(id,fcm,firestore)
+  {
+    if(id !== undefined)
+    {
+     
+          // Update user in DB
+          updateFCMInFirebase(id,fcm,firestore);
+    }
+    else
+    {
+      console.error("Error querying Firestore:", error);
+      throw error;
+    }
+  
+  }
   async function createOrUpdateUser(id,data,firestore)
   {
     try{
@@ -322,27 +327,40 @@ async function updateUserInFirebase(id,docId,user,firestore) {
       console.log("Error");
       throw new error('invalid-argument', 'Missing or invalid data.');
     }
-    firestore.collection("users")
-  .where("id", "==", id)
-  .limit(1)
-  .get()
-  .then((querySnapshot) => {
-    if (!querySnapshot.empty) {
-      // Update user in DB
-        updateUserInFirebase(id,querySnapshot.docs[0].id,user,firestore).then(()=>{
-        console.log("Finalized createOrUpdateUser");
+    if(id !== undefined)
+    {
+      firestore.collection("users")
+      .where("id", "==", id)
+      .limit(1)
+      .get()
+      .then((querySnapshot) => {
+        if (!querySnapshot.empty) {
+          // Update user in DB
+            updateUserInFirebase(id,querySnapshot.docs[0].id,user,firestore).then(()=>{
+            console.log("Finalized createOrUpdateUser");
+          })
+          console.log("Updating User");
+        } else {
+          // Document with the unique field value does not exist
+          addUserToFirebase(id,user,firestore);
+          console.log("Adding new user");
+        }
       })
-      console.log("Updating User");
-    } else {
-      // Document with the unique field value does not exist
-      addUserToFirebase(id,user,firestore);
-      console.log("Adding new user");
+      .catch((error) => {
+        console.error("Error querying Firestore:", error);
+        throw error;
+      });
     }
-  })
-  .catch((error) => {
-    console.error("Error querying Firestore:", error);
-    throw error;
-  });
+    else{
+      try{
+        addUserToFirebase(id,user,firestore);
+      }catch(error){
+        console.error("Error adding user to Firestore:", error);
+        throw error;
+      }
+      
+    }
+    
    
     
   }catch(error)
@@ -504,6 +522,13 @@ async function addCurrencies(firestore)
   }
 }
 
+function extractTokenFromBearer(bearerToken) {
+  if (typeof bearerToken === 'string' && bearerToken.startsWith('Bearer ')) {
+    const token = bearerToken.split(' ')[1];
+    return token;
+  }
+  return bearerToken;
+}
 
 
 // Export the utility function
@@ -517,6 +542,8 @@ module.exports = {
     bulkCreateOrUpdateUsers,
     addNewWallet,
     addCurrencies,
-    createOrUpdateUser
+    createOrUpdateUser,
+    updateUserFCM,
+    extractTokenFromBearer
   };
 
