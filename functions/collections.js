@@ -1,7 +1,7 @@
 const { error } = require("firebase-functions/logger");
 const {  Timestamp } = require('firebase-admin/firestore');
 
-const currenciesData = {
+var currenciesData = {
   "USD": {
     "symbol": "$",
     "name": "US Dollar",
@@ -88,40 +88,12 @@ async function createOrUpdateIntraTransaction(firestore,intraTransaction)
     return { success: true };
 };
 
-// Create or update a transaction request document
-async function createOrUpdateTransactionRequest(firestore,transactionRequest)
-{
-  // Extract data from the request 
-  const { userRefrenceId, sendingWalletRefrence, receivingWalletRefrence, sendingBankRefernce, receivingBankRefernce, currencySent, currencyReceived, amountToSend, amountConverted, amountToReceive, amountReceived, action, transactionStatus, errorCode, readyForWithdrawl, timeToFinishExchange, askedExchangeType, finalizedTransactionDate } = transactionRequest;
-  // Create or update the transaction request document in Firestore
-  await firestore.collection('TransactionRequests').doc(userRefrenceId.toString()).set({
-    userRefrenceId,
-    sendingWalletRefrence,
-    receivingWalletRefrence,
-    sendingBankRefernce,
-    receivingBankRefernce,
-    currencySent,
-    currencyReceived,
-    amountToSend,
-    amountConverted,
-    amountToReceive,
-    amountReceived,
-    action,
-    transactionStatus,
-    errorCode,
-    readyForWithdrawl,
-    timeToFinishExchange: timeToFinishExchange ? admin.firestore.Timestamp.fromDate(new Date(timeToFinishExchange)) : null,
-    askedExchangeType,
-    finalizedTransactionDate: finalizedTransactionDate ? admin.firestore.Timestamp.fromDate(new Date(finalizedTransactionDate)) : null,
-  }, { merge: true });
 
-  // Return a success response
-  return { success: true };
-};
 
 // Create activity document
 async function createNewActivity(firestore,activity)
 {
+  activity.status = "In Progress";
   const activityRef = await firestore.collection('activity').add(activity);
   return activityRef;
 };
@@ -145,18 +117,59 @@ async function bulkCreateOrUpdateUsers(firestore,users)
   return { success: true };
 }
 
+// Create or update a transaction request document
+async function createOrUpdateTransactionRequest(firestore,transactionRequest)
+{
+  // Extract data from the request 
+  const { id, userId, sendingWalletRefrence, receivingWalletRefrence, sendingBankRefernce, receivingBankRefernce, currencySent, currencyReceived, amountToSend, amountConverted, transactionStatus, readyForWithdrawl, timeToFinishExchange, askedExchangeType, finalizedTransactionDate } = transactionRequest;
+  
+  const safeRequest = {
+    id,
+    user: userId,
+    sendingWalletRefrence,
+    receivingWalletRefrence,
+    sendingBankRefernce,
+    receivingBankRefernce,
+    currencySent,
+    currencyReceived,
+    amountToSend,
+    amountConverted,
+    transactionStatus,
+    readyForWithdrawl,
+    timeToFinishExchange: new Date(timeToFinishExchange),
+    askedExchangeType,
+    finalizedTransactionDate: finalizedTransactionDate ? new Date(finalizedTransactionDate) : null,
+  };
+  // Create or update the transaction request document in Firestore
+  await firestore.collection('TransactionRequests').doc(id).set(safeRequest, { merge: true }).then(()=>{
+    console.log("createOrUpdateTransactionRequest");
+    createNewActivity(firestore,safeRequest);
+    // Return a success response
+    return { success: true };
+  })
+.catch ((error) => {
+  console.error('Error createOrUpdateTransactionRequest to Firebase:', error);
+  // Return a success response
+  return { success: false};
+});;
+
+  
+};
+
+
+
 async function bulkCreateOrUpdateTransactionRequests(firestore,transactionRequests)
 {
   
     const batch = firestore.batch();
   
     for (const transactionRequest of transactionRequests) {
-      const { id, userReferenceId, sendingWalletRefrence, receivingWalletRefrence, sendingBankRefernce, receivingBankRefernce, currencySent, currencyReceived, amountToSend, amountConverted, transactionStatus, readyForWithdrawl, timeToFinishExchange, askedExchangeType, finalizedTransactionDate } = transactionRequest;
+      const { id, userId, sendingWalletRefrence, receivingWalletRefrence, sendingBankRefernce, receivingBankRefernce, currencySent, currencyReceived, amountToSend, amountConverted, transactionStatus, readyForWithdrawl, timeToFinishExchange, askedExchangeType, finalizedTransactionDate } = transactionRequest;
   
       const transactionRequestDocRef = firestore.collection('TransactionRequests').doc(id.toString());
       batch.set(transactionRequestDocRef, {
         id,
-        user: { referenceId: userReferenceId },
+        user: userId,
         sendingWalletRefrence,
         receivingWalletRefrence,
         sendingBankRefernce,
@@ -170,7 +183,12 @@ async function bulkCreateOrUpdateTransactionRequests(firestore,transactionReques
         timeToFinishExchange: new Date(timeToFinishExchange),
         askedExchangeType,
         finalizedTransactionDate: finalizedTransactionDate ? new Date(finalizedTransactionDate) : null,
-      }, { merge: true });
+      }, { merge: true }).then(()=>{
+        console.log("bulkCreateOrUpdateTransactionRequests");
+      })
+    .catch ((error) => {
+      console.error('Error bulkCreateOrUpdateTransactionRequests to Firebase:', error);
+    });
     }
   
     await batch.commit();
@@ -523,10 +541,15 @@ async function addCurrencies(firestore)
 }
 
 function extractTokenFromBearer(bearerToken) {
+  
   if (typeof bearerToken === 'string' && bearerToken.startsWith('Bearer ')) {
+    console.log("extractTokenFromBearer: Removing Token");
     const token = bearerToken.split(' ')[1];
+    console.log("extractTokenFromBearer: New Token:"+token);
     return token;
   }
+  console.log("extractTokenFromBearer: Did not remove token");
+
   return bearerToken;
 }
 

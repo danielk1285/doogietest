@@ -11,15 +11,21 @@ const OPENEXCHANGE_APP_ID = "c8a30bf78a1c4d3dbd053c0e23711f82";
 //functions.config().openexchange.value;
 // function to retrieve current exchange rates using the Open Exchange Rates API
 async function fetchExchangeRates() {
+  try{
   const apiEndpoint = "https://openexchangerates.org/api/latest.json?app_id="+OPENEXCHANGE_APP_ID+"&symbols="+currencies.join(',');
   console.log(apiEndpoint);
   const response = await fetch(apiEndpoint);
   if (!response.ok) {
     throw new Error("Failed to fetch exchange rates:"+response.statusText);
+
   }
   const json = await response.json();
   rates = json.rates;
   console.log("fetchExchangeRates here are the rates:"+JSON.stringify(rates));
+}catch(error){
+  console.log(`Error:${error}`);
+  throw new Error("Failed to fetch exchange rates:"+error);
+}
 };
 
 // function to update exchange rates in Firestore

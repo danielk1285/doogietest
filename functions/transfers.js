@@ -47,9 +47,9 @@ function validateTransferRequest(data)
       return true;
     }
 }
-
 function validateWithdrawalRequest(data)
 {
+
     // Validate the JSON structure
     if (
       typeof data.userId !== 'string' ||
@@ -72,6 +72,31 @@ function validateWithdrawalRequest(data)
  async function createNewTransfer(data,admin,user)
  {
     pushToFirebase = false;
+    var activityMap =
+    {
+      "userID":"",
+      "transfer":{
+        "status":"",
+        "error message":"",
+        "Sent Amount":"",
+        "Bank":"",
+        "Date & Time":"",
+
+      },
+      "withdraw":{
+        "Withdrawl Amount":"",
+        "error message":"",
+        "Bank":"",
+        "Date & Time":"",
+      },
+      "exchange":{
+        "Sent Amount":"",
+        "Expected Amount":"",
+        "Expected Rate":"",
+        "Date & Time":"",
+      }
+    }
+    var activity = {};
     try{
       if('Exchange' === data.action)
       {
@@ -84,8 +109,16 @@ function validateWithdrawalRequest(data)
           data.createdAt = Timestamp.now();
           data.timeToFinishExchange = new Date();
           data.timeToFinishExchange.setDate(data.timeToFinishExchange.getDate() + 5);
-          //Get user ID wallets: data.userId
-        }
+ /*         activity = {"userID":uid,
+              "type":"Exchange",
+              "status":"In Progress",
+              "sent amount":"",
+              "expected amount":"",
+              "conversion rate":"",
+              "date & time":New Date(Timestamp.now()),
+      
+            }*/
+          }
       }
       else if('Transfer' === data.action)
       {
@@ -95,6 +128,15 @@ function validateWithdrawalRequest(data)
           data.errorCode = 0;
           data.createdAt = Timestamp.now();
           //Add wallets to user
+           /*        
+          activity = {"userID":uid,
+              "type":"Transfer",
+              "status":"In Progress",
+              "sent amount":"",
+              "Bank":"",
+              "date & time":New Date(Timestamp.now()),
+      
+            }*/
         }
       }
       else if('withdrawal' === data.action)
@@ -104,6 +146,14 @@ function validateWithdrawalRequest(data)
           pushToFirebase = true;
           data.errorCode = 0;
           data.createdAt = Timestamp.now();
+          /*activity = {"userID":uid,
+              "type":"Withdrawal",
+              "status":"In Progress",
+              "expected amount":"",
+              "Bank":"",
+              "date & time":New Date(Timestamp.now()),
+      
+            }*/
         }
       }
       if(!pushToFirebase)
@@ -121,7 +171,18 @@ function validateWithdrawalRequest(data)
         }
         );*/
     // Add transfer request to Firestore
-    await admin.firestore().collection('transferRequests').add(data);
+    await admin.firestore().collection('transferRequests').add(data).then(()=>{
+      try{
+//        admin.firestore().collection('transferRequests').add(activity);
+      }
+      catch(error)
+      {
+        throw error;
+      }
+    }).catch((error) => {
+      console.error("Error querying Firestore:", error);
+      throw error;
+    });
     }catch(error)
     {
         throw error;  
