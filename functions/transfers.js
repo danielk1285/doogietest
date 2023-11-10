@@ -33,7 +33,7 @@ function validateTransferRequest(data)
 {
     // Validate the JSON structure
     if (
-      typeof data.userId !== 'string' ||
+      //typeof data.userId !== 'string' ||
       typeof data.amountToSend !== 'number' ||
       !['ILS', 'USD', 'EUR','GBP'].includes(data.currency)
       /*
@@ -52,7 +52,7 @@ function validateWithdrawalRequest(data)
 
     // Validate the JSON structure
     if (
-      typeof data.userId !== 'string' ||
+//      typeof data.userId !== 'string' ||
       typeof data.amountToWithdraw !== 'number' ||
       !['ILS', 'USD', 'EUR','GBP'].includes(data.currency)
 
@@ -139,7 +139,7 @@ function validateWithdrawalRequest(data)
             }*/
         }
       }
-      else if('withdrawal' === data.action)
+      else if('Withdrawal' === data.action)
       {
         if(validateWithdrawalRequest(data))
         {
